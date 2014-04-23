@@ -45,11 +45,7 @@ module.exports = function(grunt) {
 		
 		for (var i = 0, file = this.files[0]; file !== undefined; file = this.files[++i]) {
 			var dest    = file.dest;
-			var context = {};
-			
-			for (var s in _global) {
-				if (_global.hasOwnProperty(s)) Object.defineProperty(context, s, Object.getOwnPropertyDescriptor(_global, s));
-			}
+			var context = Object.create(_global);
 			
 			var target = {
 				name    : dest,
