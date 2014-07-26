@@ -1,5 +1,6 @@
 "use strict";
 
+var _URI   = require('./lib/uri.cjs.min.js');
 var _chalk = require('chalk');
 
 
@@ -11,40 +12,121 @@ function _buildMsg(task, step, message) {
 
 
 module.exports = function(grunt) {
-	
 	grunt.registerMultiTask('superglue', 'Multistep file processing.', function() {		
 		var _global = {};
 		var _target = {};
 		
 		var _options = this.options({
-			initTask : function(data) {},
-			initDest : function(data, dest) {},
-			initSrc  : function(data, dest, index, name, string) { return string; },
-			concat   : function(data, dest, index, name, string) { return string; },
-			write    : function(data, dest, string) { return string; },
-			endDest  : function(data, dest) {},
-			endTask  : function(data) {}
+			/**
+			 * Stage 0: Initializes the task context
+			 * Called once per task
+			 * Aborts the task when returning false
+			 * Aborts the task when throwing
+			 * @name openTask
+			 * @callback
+			 * @param {Object} data The task context
+			 * @returns {undefined|false}
+			 */
+			
+			/**
+			 * Stage 1: Initializes the destination context
+			 * Called once per destination
+			 * Aborts the destination when returning false
+			 * Aborts the task when throwing
+			 * @name openTarget
+			 * @callback
+			 * @param {Object}           data The destination context
+			 * @param {URIPathComponent} dest The destination path
+			 * @returns {undefined|false}
+			 */
+			
+			/**
+			 * Stage 2: Initializes a source
+			 * Called once per source
+			 * Replaces the source string when not returning undefined
+			 * Aborts the task when throwing
+			 * @name openSource
+			 * @callback
+			 * @param {Object}           data   The destination context
+			 * @param {URIPathComponent} dest   The destination path
+			 * @param {Uint}             index  The source order index
+			 * @param {URIPathComponent} name   The source path
+			 * @param {String}           string The source content
+			 * @returns {undefined|String}
+			 */
+
+			/**
+			 * Stage 3: Concatenates the target string
+			 * Called once per source
+			 * Replaces the source string when not returning undefined
+			 * Aborts the task when throwing
+			 * @name beforeConcat
+			 * @callback
+			 * @param {Object}           data   The destination context
+			 * @param {URIPathComponent} dest   The destination path
+			 * @param {Uint}             index  The source order index
+			 * @param {URIPathComponent} name   The source path
+			 * @param {String}           string The source context
+			 * @returns {undefined|String}
+			 */
+
+			/**
+			 * Stage 4: Writes the target string
+			 * Called once per destination
+			 * Replaces the target string when not returning undefined
+			 * Aborts the task when throwing
+			 * @name afterConcat
+			 * @callback
+			 * @param {Object}           data   The destination context
+			 * @param {URIPathComponent} dest   The destination path
+			 * @param {String}           string The destination string
+			 * @returns {unresolved}
+			 */
+
+			/**
+			 * Stage 5: Executes post-write tasks
+			 * Called once per destination
+			 * Aborts the task when throwing
+			 * @name closeTarget
+			 * @callback
+			 * @param {Object}           data The destination context
+			 * @param {URIPathComponent} dest The destination path
+			 * @returns {undefined}
+			 */
+
+			/**
+			 * Stage 6: Executes post-write tasks
+			 * Called once per task
+			 * Aborts the task when throwing
+			 * @name closeTask
+			 * @callback
+			 * @param {Object} data The task context
+			 * @returns {undefined}
+			 */
 		});
-				
-		if (typeof _options.initTask === 'function') {
+		
+		/*
+		 * Stage 0: openTask
+		 */
+		if (typeof _options.openTask === 'function') {
 			try {
-				var ret = _options.initTask(_global);
+				var ret = _options.openTask(_global);
 			}
 			catch (err) {
-				grunt.log.error(_buildMsg(this.name, "initTask", err.message));
+				grunt.log.error(_buildMsg(this.name, "openTask", err.message));
 
 				return false;
 			}
 
 			if (ret === false) {
-				grunt.log.writeln(_buildMsg(this.name, "initTask", _chalk.yellow("aborted")));
+				grunt.log.writeln(_buildMsg(this.name, "openTask", _chalk.yellow("aborted")));
 				
 				return true;
 			}
 		}
 		
 		for (var i = 0, file = this.files[0]; file !== undefined; file = this.files[++i]) {
-			var dest    = file.dest;
+			var dest    = _URI.URIPathComponent.ComponentString(file.dest);
 			var context = Object.create(_global);
 			
 			var target = {
@@ -55,42 +137,48 @@ module.exports = function(grunt) {
 				string  : ""
 			};
 			
-			if (typeof _options.initDest === 'function') {
+			/*
+			 * Stage 1: openTarget
+			 */			
+			if (typeof _options.openTarget === 'function') {
 				try {
-					target.process = _options.initDest(context, dest) !== false;
+					target.process = _options.openTarget(context, dest) !== false;
 				}
 				catch (err) {
-					grunt.log.error(_buildMsg(this.name, "initDest", err.message));
+					grunt.log.error(_buildMsg(this.name, "openTarget", err.message));
 					
 					return false;
 				}
 			}
 			
 			if (!target.process) {
-				grunt.log.writeln(_buildMsg(this.name, "initDest", _chalk.yellow("aborted") + " " + _chalk.cyan(target.dest)));
+				grunt.log.writeln(_buildMsg(this.name, "openTarget", _chalk.yellow("aborted") + " " + _chalk.cyan(target.dest)));
 				
 				continue;
 			}
 			
 			for (var j = 0, path = file.src[0]; path !== undefined; path = file.src[++j]) {
 				if (!grunt.file.exists(path)) {
-					grunt.log.warn(_buildMsg(this.name, "initSrc", _chalk.cyan(path) + " " + _chalk.yellow("missing")));
+					grunt.log.warn(_buildMsg(this.name, "openSource", _chalk.cyan(path) + " " + _chalk.yellow("missing")));
 					
 					continue;
 				}
 				
 				var source = {
 					index  : j,
-					name   : path,
+					name   : _URI.URIPathComponent.ComponentString(path),
 					string : grunt.file.read(path)
 				};
 				
-				if (typeof _options.initSrc === 'function') {
+				/*
+				 * Stage 2: openSource
+				 */
+				if (typeof _options.openSource === 'function') {
 					try {
-						var ret = _options.initSrc(target.context, target.name, source.index, source.name, source.string);
+						var ret = _options.openSource(target.context, target.name, source.index, source.name, source.string);
 					}
 					catch (err) {
-						grunt.log.error(_buildMsg(this.name, "initSrc", err.message));
+						grunt.log.error(_buildMsg(this.name, "openSource", err.message));
 						
 						return false;
 					}
@@ -102,7 +190,7 @@ module.exports = function(grunt) {
 			}
 			
 			if (target.source.length === 0) {
-				grunt.log.warn(_buildMsg(this.name, "initSrc", _chalk.cyan(target.dest) + " " + _chalk.yellow("skipped")));
+				grunt.log.warn(_buildMsg(this.name, "openSource", _chalk.cyan(target.dest) + " " + _chalk.yellow("skipped")));
 				
 				target.process = false;
 			}
@@ -116,27 +204,33 @@ module.exports = function(grunt) {
 			if (!target.process) continue;
 			
 			for (var i = 0, source = target.source[0]; source !== undefined; source = target.source[++i]) {
-				if (typeof _options.concat === 'function') {
+				/*
+				 * Stage 3: beforeConcat
+				 */
+				if (typeof _options.beforeConcat === 'function') {
 					try {
-						var ret = _options.concat(target.context, target.name, source.index, source.name, source.string);
+						var ret = _options.beforeConcat(target.context, target.name, source.index, source.name, source.string);
 					}
 					catch (err) {
-						grunt.log.error(_buildMsg(this.name, "concat", err.message));
+						grunt.log.error(_buildMsg(this.name, "beforeConcat", err.message));
 						
 						return false;
 					}
 
-					if (ret !== undefined) target.string += String(ret);
+					target.string += ret !== undefined ? String(ret) : source.string;
 				}
 				else target.string += source.string;
 			}
 			
-			if (typeof _options.write === 'function') {
-				try {
-					ret = _options.write(target.context, target.name, target.string);
+			/*
+			 * Stage 4: afterConcat
+			 */
+			if (typeof _options.afterConcat === 'function') {
+				try {					
+					ret = _options.afterConcat(target.context, target.name, target.string);
 				}
 				catch (err) {
-					grunt.log.error(_buildMsg(this.name, "write", err.message));
+					grunt.log.error(_buildMsg(this.name, "afterConcat", err.message));
 					
 					return false;
 				}
@@ -145,33 +239,39 @@ module.exports = function(grunt) {
 			}
 			
 			if (target.string === "") {
-				grunt.log.warn(_buildMsg(this.name, "write", _chalk.cyan(target.name) + " " + _chalk.yellow("skipped")));
+				grunt.log.warn(_buildMsg(this.name, "afterConcat", _chalk.cyan(target.name) + " " + _chalk.yellow("skipped")));
 				
 				continue;
 			}
+						
+			grunt.file.write(target.name.toString(), target.string);
 			
-			grunt.file.write(target.name, target.string);
+			grunt.log.writeln(_buildMsg(this.name, "afterConcat", _chalk.cyan(target.name) + "..." + _chalk.green("OK")));
 			
-			grunt.log.writeln(_buildMsg(this.name, "write", _chalk.cyan(target.name) + "..." + _chalk.green("OK")));
-			
-			if (typeof _options.endDest === 'function') {
+			/*
+			 * Stage 5: closeTarget
+			 */
+			if (typeof _options.closeTarget === 'function') {
 				try {
-					_options.endDest(target.context, target.name);
+					_options.closeTarget(target.context, target.name);
 				}
 				catch (err) {
-					grunt.log.error(_buildMsg(this.name, "endDest", err.message));
+					grunt.log.error(_buildMsg(this.name, "closeTarget", err.message));
 					
 					return false;
 				}
 			}
 		}
-				
-		if (typeof _options.endTask === 'function') {
+		
+		/*
+		 * Stage 6: closeTask
+		 */
+		if (typeof _options.closeTask === 'function') {
 			try {
-				_options.endTask(_global);
+				_options.closeTask(_global);
 			}
 			catch (err) {
-				grunt.log.error(_buildMsg(this.name, "endTask", err.message));
+				grunt.log.error(_buildMsg(this.name, "closeTask", err.message));
 				
 				return false;
 			}
